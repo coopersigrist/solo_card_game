@@ -1,5 +1,8 @@
 import random
 from typing import Tuple, Dict, Any
+import numpy as np
+import visualization
+import pygame
 
 suits = ['diamonds', 'hearts', 'spades', 'clubs']
 ranks = ['7','8','9','10','Jack','Queen','King', 'Ace']
@@ -20,6 +23,8 @@ class Card:
         self.value = value
         self.suit = suit
         self.num = num
+
+        self.image = pygame.image.load('card_pics/' + self.rank + '_of_' + str(self.suit) + '.png')
         
     def __str__( self ):
         return self.rank + " of " + self.suit
@@ -52,7 +57,7 @@ def get_num(card):
     return card.num
 
 class Deck:
-    def __init__(self, cards):
+    def __init__(self, cards=[Card(ranks[num-7], values[num-7], suit, (num - 6) + (8 * step)) for num in range(7, 15) for step,suit in enumerate(suits)]):
         '''
         A deck of Solo cards, 7 - Ace 
         :param cards: the cards used in this deck (a solo deck in this case)
@@ -92,6 +97,9 @@ class Hand:
         for step, card in enumerate(self.cards):
             ret += str(card) + " -- " + str(step) + "\n"
         return ret
+    
+    def __len__(self):
+        return len(self.cards)
 
     def sort(self):
         self.cards = sorted(self.cards, key=get_num)
@@ -109,7 +117,7 @@ class Hand:
         return any(card.suit == suit for card in self.cards)
 
 class Player:
-    def __init__(self, deck):
+    def __init__(self, deck, name=None):
         '''
         A solo player, keeps track of score and hand of the player
         '''
@@ -118,7 +126,10 @@ class Player:
         self.hand.sort()
         self.points = 0
         self.tricks = 0
-        self.name = input("what's your name?")
+        if name == None:
+            self.name = input("what's your name?")
+        else:
+            self.name = str(name)
         print(str(self))
 
     def __str__(self):
@@ -165,6 +176,7 @@ class Bid:
 
     def winner(self, lead_suit, played):
         sorted_plays = sorted(played, key=lambda tup: tup[1].val(self.suit, lead_suit), reverse=True)
+        print(sorted_plays[0][0])
         return sorted_plays[0]
 
     def go_through(self):
@@ -182,7 +194,7 @@ class Bid:
         elif self.name in ["grand-du","solo-du"]:
             return bidder.tricks == 8
         else:
-            return bidder.trick == 0 and tricks_left == 0
+            return bidder.tricks == 0 and tricks_left == 0
     
     def lost(self, bidder, partner, tricks_left):
         if self.name in ["frock","wedding","solo","grando"]:
@@ -193,10 +205,10 @@ class Bid:
         elif self.name in ["grand-du","solo-du"]:
             return (bidder.tricks < 8 - tricks_left)
         else:
-            return bidder.trick > 0 
+            return bidder.tricks > 0 
 
 class Round:
-    def __init__(self, turn, bid, players):
+    def __init__(self, turn, bid, players, gameboard):
         '''
         A single round of cards (4 played in total) this will determine the winner and allow players to play their cards
         :param turn: the first turn of play (a number 0 - 3)
@@ -210,11 +222,13 @@ class Round:
         self.lead_suit = None
 
         for ind in range(4):
+            gameboard.render_all((self.turn + ind) % 4, bid, players)
             self.played.append(self.play_card((self.turn + ind) % 4))
 
         self.winner = bid.winner(self.lead_suit, self.played)
         print("\nPlayed: \n" + str(self))
-        print(str(self.winner[0]) + " wins with " + str(self.winner[1]))
+        print(str(self.winner) + " wins with " + str(self.winner[1]))
+        
  
     def __str__( self ):
         ret = ''
@@ -223,13 +237,19 @@ class Round:
         return ret
 
     def play_card(self, turn):
-        print("Player " + str(turn % 4 + 1) + "'s turn\n")
+        print("Player " + self.players[turn % 4].name + "'s turn\n")
         print("Played: \n" + str(self))
         print("your cards: \n" + str(self.players[turn].hand))
 
         choice = None
         while choice == None:
-            choose = int(input("which card to play?"))
+            choose = None
+            while choose == None:
+                choose = int(input("which card to play?"))
+                if choose not in np.arange(len(self.players[turn].hand)):
+                    print("That's not an option! (Pick the number next to the card)")
+                    choose = None
+
             if not turn == self.turn:
                 if any(card.suit == self.lead_suit for card in self.players[turn].hand.cards) and not self.players[turn].check_card(choose).suit == self.lead_suit:
                     print("you have to play on suit (" + self.lead_suit + ") -- pulling a Griffin, my god\n")
@@ -242,19 +262,21 @@ class Round:
         return (self.players[turn], self.players[turn].play_card(choice), turn)
 
 class FullHand:
-    def __init__(self,turn,bid,bidder,partner,other_team,players):
+    def __init__(self,turn,bid,bidder,partner,other_team,players,gameboard):
         self.turn = turn
         self.bid = bid
         self.players = players
         tricks_left = 8
         while self.bid.over(bidder, partner, tricks_left) == False:
-            self.round = Round(self.turn, self.bid, self.players)
+            self.round = Round(self.turn, self.bid, self.players, gameboard=gameboard)
+            gameboard.render_all(turn, bid, players)
             self.turn = self.round.winner[2]
             self.round.winner[0].tricks += 1
             tricks_left -= 1
         if bid.won(bidder, partner, tricks_left):
             bidder.score(bid.points)
-            partner.score(bid.points)
+            if partner is not None:
+                partner.score(bid.points)
         else:
             for player in other_team:
                 player.score(bid.points)
@@ -273,26 +295,36 @@ class Game:
 
         self.suit = None
 
-        self.player1 = Player(self.game_deck)
-        self.player2 = Player(self.game_deck)
-        self.player3 = Player(self.game_deck)
-        self.player4 = Player(self.game_deck)
+        self.player1 = Player(self.game_deck, name="Cooper")
+        self.player2 = Player(self.game_deck, name="Helen")
+        self.player3 = Player(self.game_deck, name="LBS")
+        self.player4 = Player(self.game_deck, name="PooPoo")
 
         self.players = [self.player1, self.player2, self.player3, self.player4]
 
+
+
+    def start(self):
+
+        self.gameboard = visualization.GameBoard(self.players)
+        
+
         while not self.game_over():
+
+
+            self.gameboard.render_hand(self.players[self.turn].hand)
 
             self.bidding()
 
             self.bidder = self.players[self.bid_winner]
-            self.other_team = [not player in [self.bidder, self.partner] for player in self.players]
+            self.other_team = [player for player in self.players if player not in [self.bidder, self.partner]]
 
-            self.full_hand = FullHand(self.turn, self.bid, self.bidder, self.partner, self.other_team, self.players)
+            self.full_hand = FullHand(self.turn, self.bid, self.bidder, self.partner, self.other_team, self.players, self.gameboard)
 
             self.new_hands()
 
         print("And the loser is: " + str(self.loser()))
-        
+
 
     def bidding(self):
         '''
@@ -303,7 +335,7 @@ class Game:
         self.top_bid = "pass"
         
         for ind in range(4):
-            self.bid((ind+self.turn) % 4)
+            self.player_bid((ind+self.turn) % 4)
 
         if not self.top_bid == "pass":
             self.bid = Bid(BIDS[self.top_bid], self.top_bid, self.suit)
@@ -325,13 +357,15 @@ class Game:
         else:
             self.suit = self.forced_suit
         
+        self.gameboard.render_all(self.bid_winner, self.bid, self.players)
+        
         if not self.top_bid == "pass":
             self.bid = Bid(BIDS[self.top_bid], self.top_bid, self.suit)
         else:
             self.turn = self.turn + 1 % 4
             self.bidding()
 
-    def bid(self, turn):
+    def player_bid(self, turn):
         '''
         Prompts the player to choose a bid with some simple catch logic
         '''
@@ -339,6 +373,8 @@ class Game:
         print("\ntop bid is: " + self.top_bid)
         print("player " + self.players[turn].name + "'s turn to bid")
         print("pick a bid out of: " + str(BID_NAMES))
+
+        self.gameboard.render_all(turn, final_bid, self.players)
 
         while final_bid == None:
             new_bid = input("which bid do you want?")
@@ -361,12 +397,14 @@ class Game:
     def pick_suit(self,bid):
         '''
         Prompts the player to choose a suit with some simple catch logic
+        TODO Remove unallowed options for suits
         '''
         final_choice = None
         hand = self.players[self.bid_winner].hand
+        self.gameboard.render_all(self.bid_winner, bid, self.players)
         print("Suits: " + str(suits))
         while final_choice == None:
-            chosen = input("which suit do you want to choose?")
+            chosen = input("which suit do you want to choose as Trump?")
             if not chosen in suits:
                 print("you gotta pick one of the ones on the cards")
             elif not hand.has_suit(chosen):
@@ -374,16 +412,26 @@ class Game:
                 # TODO implement wedding stuff
             else:
                 final_choice = chosen
+
+        self.fix_queens(final_choice)
         
         return final_choice
+    
+    def fix_queens(self, suit):
+        for player in self.players:
+            for card in player.hand.cards:
+                if card.rank == "Queen" and (card.suit == "clubs" or card.suit == "spades"):
+                    card.suit = suit
 
     def pick_partner(self,bid):
         '''
         Prompts the player to choose a partner with some simple catch logic
+        TODO Remove unallowed options for suits
         '''
         # TODO implement wedding stuff
         final_choice = None
         hand = self.players[self.bid_winner].hand
+        self.gameboard.render_all(self.bid_winner, bid, self.players)
         print("Suits: " + str(suits))
         while final_choice == None:
             chosen = input("which ace do you want to choose?")
@@ -398,8 +446,16 @@ class Game:
                 # TODO implement unknown aces
             else:
                 final_choice = chosen
-        partner = filter(Player.has_card(14, final_choice), self.players)
+        partner = self.who_has_card(value=14, suit=final_choice, player_list=self.players)
         return partner
+    
+    def who_has_card(self, value, suit, player_list):
+        for player in player_list:
+            if player.has_card(value, suit):
+                return player
+            
+        print("This case should never be reached, no player has a given card")
+        return 
 
 
     def game_over(self):
@@ -425,5 +481,6 @@ class Game:
             return None  
 
 game = Game()
+game.start()
 print(game.player1)
-round = Round(0, bid, game.players)
+# round = Round(0, bid, game.players)
