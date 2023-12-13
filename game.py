@@ -105,6 +105,7 @@ class Hand:
         self.cards = sorted(self.cards, key=get_num)
 
     def play(self, index):
+        print(self.cards)
         return self.cards.pop(index)
 
     def check(self, index):
@@ -220,9 +221,10 @@ class Round:
         self.bid = bid
         self.players = players
         self.lead_suit = None
+        self.gameboard = gameboard
 
         for ind in range(4):
-            gameboard.render_all((self.turn + ind) % 4, bid, players)
+            gameboard.render_all((self.turn + ind) % 4, bid, players, self.played)
             self.played.append(self.play_card((self.turn + ind) % 4))
 
         self.winner = bid.winner(self.lead_suit, self.played)
@@ -245,6 +247,11 @@ class Round:
         while choice == None:
             choose = None
             while choose == None:
+                for event in pygame.event.get():
+                    if event.type == pygame.MOUSEBUTTONDOWN:
+                        if pygame.mouse.get_pressed()[0]: # Left click
+                            print('Left mouse button pressed!')
+                            print(pygame.mouse.get_pos())
                 choose = int(input("which card to play?"))
                 if choose not in np.arange(len(self.players[turn].hand)):
                     print("That's not an option! (Pick the number next to the card)")
@@ -267,12 +274,14 @@ class FullHand:
         self.bid = bid
         self.players = players
         tricks_left = 8
+
         while self.bid.over(bidder, partner, tricks_left) == False:
             self.round = Round(self.turn, self.bid, self.players, gameboard=gameboard)
             gameboard.render_all(turn, bid, players)
             self.turn = self.round.winner[2]
             self.round.winner[0].tricks += 1
             tricks_left -= 1
+
         if bid.won(bidder, partner, tricks_left):
             bidder.score(bid.points)
             if partner is not None:
@@ -289,6 +298,8 @@ class Game:
         self.top_bid = "pass"
         self.forced_suit = None
 
+        self.state = "Menu"
+
         self.turn = 1
         self.bid_winner = self.turn
         self.dealer = 0
@@ -301,6 +312,13 @@ class Game:
         self.player4 = Player(self.game_deck, name="PooPoo")
 
         self.players = [self.player1, self.player2, self.player3, self.player4]
+
+    def init_round(self):
+            
+            self.bidder = self.players[self.bid_winner]
+            self.other_team = [player for player in self.players if player not in [self.bidder, self.partner]]
+
+            self.full_hand = FullHand(self.turn, self.bid, self.bidder, self.partner, self.other_team, self.players, self.gameboard)
 
 
 
@@ -374,7 +392,7 @@ class Game:
         print("player " + self.players[turn].name + "'s turn to bid")
         print("pick a bid out of: " + str(BID_NAMES))
 
-        self.gameboard.render_all(turn, final_bid, self.players)
+        # self.gameboard.render_all(turn, final_bid, self.players)
 
         while final_bid == None:
             new_bid = input("which bid do you want?")
@@ -401,7 +419,7 @@ class Game:
         '''
         final_choice = None
         hand = self.players[self.bid_winner].hand
-        self.gameboard.render_all(self.bid_winner, bid, self.players)
+        # self.gameboard.render_all(self.bid_winner, bid, self.players)
         print("Suits: " + str(suits))
         while final_choice == None:
             chosen = input("which suit do you want to choose as Trump?")
@@ -480,7 +498,7 @@ class Game:
         else:
             return None  
 
-game = Game()
-game.start()
-print(game.player1)
+# game = Game()
+# game.start()
+# print(game.player1)
 # round = Round(0, bid, game.players)
